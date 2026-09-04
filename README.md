@@ -300,3 +300,9 @@ Codex 的 `notify` 行为以 [OpenAI 官方配置参考](https://developers.open
 [MIT](LICENSE)
 
 如果这个小工具让你少盯了一会儿终端，欢迎点个 Star。遇到兼容问题，请带上操作系统、Python 版本和 Agent 版本提交 Issue，记得先删除用户名、项目路径与密钥。
+
+## 🔗 友情链接
+
+本项目在开发和分享过程中得到了社区交流与反馈，感谢：
+
+- [LINUX DO - 新的理想型社区](https://linux.do/)
