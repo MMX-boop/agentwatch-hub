@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/hero.svg" alt="AgentWatch Hub — Codex and Claude Code completion notifications" width="100%" />
+  <img src="docs/assets/agentwatch-hero.png" alt="AgentWatch Hub — 一只守着 Coding Agent 完成状态的黑狗，任务结束后将通知送到手机和手表" width="100%" />
 </p>
 
 <p align="center">
@@ -237,6 +237,27 @@ agentwatch-notify preview \
 - 安装器修改配置前创建带时间戳的备份。
 
 通用脱敏规则无法证明能识别所有未标注的自定义秘密。请避免让 Agent 在最终回复中直接输出密码或私钥。
+
+## 通知图标也可以换成自己的
+
+Bark 通知不必一直使用默认图标。把一张图片放到公开可访问的 HTTPS 地址，然后在 `~/.agentwatch-notify/.env` 中填写：
+
+```dotenv
+BARK_ICON_URL=https://example.com/my-agentwatch-icon.png
+```
+
+保存后，下一次任务完成通知就会使用新图标，**不需要重新安装回调**。
+
+- 推荐使用正方形 PNG 或 JPG，尺寸建议为 `512 × 512`。
+- 地址必须是手机能够直接打开的图片链接，不能是图片所在的网页。
+- 可以使用 GitHub Raw、自有对象存储或图床提供的 HTTPS 直链。
+- 如果替换图片后仍显示旧图，通常是 Bark 或 CDN 缓存；更换文件名，或给链接追加 `?v=2` 即可刷新。
+
+例如，同一张图片更新后可以改成：
+
+```dotenv
+BARK_ICON_URL=https://example.com/my-agentwatch-icon-v2.png
+```
 
 ## 配置与命令
 
