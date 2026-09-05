@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <strong>Codex / Claude Code 跑完以后，让 iPhone 和 Apple Watch 主动叫你回来。</strong>
+  <strong>Codex 桌面版 / Claude Code 跑完以后，让 iPhone 和 Apple Watch 主动叫你回来。</strong>
   <br />
   <sub>完成通知 · LLM 动态人格 · 本地优先 · 可逆安装</sub>
 </p>
@@ -28,7 +28,9 @@
 
 让 Coding Agent 跑一个十几分钟的任务时，最烦的不是等，而是**不知道什么时候等完**。
 
-盯着终端浪费时间，离开电脑又会忍不住回来刷新。AgentWatch 目前只解决这一件小事：监听 Codex CLI 和 Claude Code 的真实完成事件，任务结束后通过 Bark 把结果送到 iPhone 和 Apple Watch。
+盯着任务窗口浪费时间，离开电脑又会忍不住回来查看。AgentWatch 目前只解决这一件小事：接收 **Codex 桌面版的本地任务**和 **Claude Code CLI** 的完成事件，回合结束后通过 Bark 把提醒送到 iPhone 和 Apple Watch。
+
+**主要使用场景是 Codex 桌面应用 + Claude Code。** 安装过程需要运行几条终端命令；安装好后，你继续在 Codex 桌面应用里运行任务即可。Codex CLI 可以复用同一个 `notify` 配置。
 
 ```text
 总裁，战报出炉了 📋
@@ -73,7 +75,8 @@ Agent：OpenAI Codex
 
 ```mermaid
 flowchart LR
-    A[Codex notify] --> N[AgentWatch callback]
+    A[Codex 桌面版 · 本地任务] --> C[Codex notify]
+    C --> N[AgentWatch callback]
     B[Claude Stop Hook] --> N
     N --> S[脱敏 · 摘要 · 去重]
     S --> P{文案来源}
@@ -97,7 +100,7 @@ Codex 的 `notify` 配置说明见 [OpenAI 官方配置参考](https://developer
 
 ## 三分钟安装
 
-需要 Python 3.11+、Bark，以及已经可以正常运行的 Codex CLI 或 Claude Code。
+需要 Python 3.11+、Bark，以及已经可以正常运行的 **Codex 桌面版**或 **Claude Code CLI**。只使用 Codex 桌面版时，无需为了通知另行安装 Codex CLI。
 
 ### 1 · 安装
 
@@ -146,7 +149,7 @@ PERSONA=boss
 agentwatch-notify install all
 ```
 
-重启 Codex / Claude Code，然后检查状态：
+安装完成后，完全退出并重新打开 **Codex 桌面应用**；如果也安装了 Claude Code 回调，请重新启动对应的 Claude Code 会话。然后检查配置：
 
 ```bash
 agentwatch-notify doctor
@@ -164,6 +167,17 @@ agentwatch-notify test
 agentwatch-notify install codex
 agentwatch-notify install claude
 ```
+
+### 4 · 在 Codex 桌面应用里验证
+
+1. 在运行 Codex 桌面应用的同一台电脑、同一个系统用户下执行 `agentwatch-notify install codex`。
+2. 安装器写入用户级 `~/.codex/config.toml` 的 `notify`。Windows 默认位置为 `%USERPROFILE%\.codex\config.toml`；自定义 `CODEX_HOME` 时，需要与桌面应用使用的目录一致。
+3. 完全退出并重新打开 Codex 桌面应用，在应用内启动一个本地任务，例如“只回复 1 + 1 的结果”。
+4. 该回合结束后，检查手机是否收到对应的 Codex 完成通知。
+
+`doctor` 只检查配置，`test` 只测试 Bark 投递；两者通过都不能代替第 3–4 步的真实桌面任务验证。当前接入范围是本机运行的任务，远程主机或云端任务需要单独适配。
+
+此前的实机联调使用 Windows Codex 桌面版与本项目完整开发版的 `notify` 回调。公开精简版沿用了这个入口；跨系统和桌面版本的兼容性仍需逐项验证，CI 通过不代表所有桌面版本都已实测。
 
 <a id="personas"></a>
 
@@ -309,7 +323,7 @@ OUTBOUND_PROXY=http://127.0.0.1:7890
 - 重建或更换了 Python 虚拟环境。
 - 修改了 `CODEX_HOME` 或 `CLAUDE_CONFIG_DIR`。
 
-第一次安装回调后，需要重启对应的 Agent CLI。
+第一次安装回调后，需要完全退出并重新打开 Codex 桌面应用，或重新启动 Claude Code CLI 会话。
 
 </details>
 
@@ -327,7 +341,7 @@ agentwatch-notify uninstall all
 
 当前版本专注“任务结束后通知我”。项目还在持续打磨，接下来准备：
 
-- [ ] 完善 Windows、Linux 与 macOS 的真实 CLI 兼容测试
+- [ ] 完善 Codex 桌面版各系统与版本的实机验证，以及 Claude Code CLI 兼容测试
 - [ ] PyPI 一键安装和自动升级
 - [ ] 接入 Gemini CLI、OpenCode、Aider 等 Coding Agent
 - [ ] 支持 ntfy、Gotify、Telegram、飞书等通知渠道
@@ -343,7 +357,7 @@ agentwatch-notify uninstall all
 <summary><strong>Bark 测试成功，但任务结束没有通知</strong></summary>
 
 1. 运行 `agentwatch-notify doctor`。
-2. 重启 Codex CLI / Claude Code。
+2. 完全退出并重新打开 Codex 桌面应用，或重新启动 Claude Code CLI。
 3. 重新执行 `agentwatch-notify install codex` 或 `install claude`。
 4. 如果移动过仓库或 `.venv`，必须重新安装回调。
 

@@ -18,7 +18,7 @@ from agentwatch_notify.providers import send_bark
 
 app = typer.Typer(
     name="agentwatch-notify",
-    help="Send Codex and Claude Code completion notifications to Bark.",
+    help="Send Codex desktop local-task and Claude Code completion notifications to Bark.",
     no_args_is_help=True,
 )
 
@@ -73,7 +73,7 @@ def install(agent: Annotated[str, typer.Argument(help="claude, codex, or all")] 
     for item in selected_agents(agent):
         target = install_claude() if item == "claude" else install_codex()
         typer.echo(f"Installed {item}: {target}")
-    typer.echo("Restart the selected CLI before testing.")
+    typer.echo("Fully quit and reopen the Codex desktop app, or restart your Claude Code CLI session.")
 
 
 @app.command()
@@ -99,10 +99,11 @@ def doctor():
         ("Config", "OK" if target.exists() and not error else error or "MISSING"),
         ("Bark key", "CONFIGURED" if configured else "MISSING"),
         ("Claude Code", "INSTALLED" if claude_installed() else "MISSING"),
-        ("Codex", "INSTALLED" if codex_installed() else "MISSING"),
+        ("Codex notify", "INSTALLED" if codex_installed() else "MISSING"),
     )
     for label, status in rows:
         typer.echo(f"{label:12} {status}")
+    typer.echo("Configuration check only. Verify delivery by completing a local task in the Codex desktop app.")
 
 
 @app.command("test")

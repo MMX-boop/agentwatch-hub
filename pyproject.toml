@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "agentwatch-hub"
 version = "0.1.0"
-description = "Bark completion notifications for Codex CLI and Claude Code, with optional LLM personas"
+description = "Bark completion notifications for Codex desktop local tasks and Claude Code, with LLM personas"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
