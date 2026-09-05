@@ -3,6 +3,8 @@ from typing import Annotated, Optional
 
 import typer
 
+from agentwatch_notify.channels.base import NotificationMessage
+from agentwatch_notify.channels.router import CHANNELS, ChannelRouter
 from agentwatch_notify.config import PERSONAS, config_path, load_settings
 from agentwatch_notify.install import (
     claude_installed,
@@ -14,21 +16,28 @@ from agentwatch_notify.install import (
 )
 from agentwatch_notify.notify import dispatch
 from agentwatch_notify.persona import render_notification
-from agentwatch_notify.providers import send_bark
 
 app = typer.Typer(
     name="agentwatch-notify",
-    help="Send Codex desktop local-task and Claude Code completion notifications to Bark.",
+    help="Send Codex desktop and Claude Code completion notifications to Bark, QQ / OneBot and Feishu.",
     no_args_is_help=True,
 )
 
 DEFAULT_ENV = """NOTIFY_ENABLED=true
+BARK_ENABLED=true
 BARK_SERVER=https://api.day.app
 BARK_DEVICE_KEY=
 BARK_GROUP=AgentWatch
 BARK_SOUND=minuet
 BARK_LEVEL=active
 BARK_ICON_URL=
+QQ_ENABLED=false
+ONEBOT_BASE_URL=http://127.0.0.1:3000
+ONEBOT_ACCESS_TOKEN=
+QQ_TARGETS=
+FEISHU_ENABLED=false
+FEISHU_WEBHOOK_URL=
+FEISHU_WEBHOOK_SECRET=
 PERSONA=boss
 CLAUDE_PERSONA=
 CODEX_PERSONA=
@@ -62,7 +71,7 @@ def init_config(force: bool = typer.Option(False, help="Replace the existing con
         backup.write_bytes(target.read_bytes())
     target.write_text(DEFAULT_ENV, encoding="utf-8")
     typer.echo(f"Created: {target}")
-    typer.echo("Add your BARK_DEVICE_KEY, then run: agentwatch-notify install all")
+    typer.echo("Configure Bark, QQ / OneBot or Feishu, then run: agentwatch-notify install all")
 
 
 @app.command()
@@ -88,39 +97,50 @@ def uninstall(agent: Annotated[str, typer.Argument(help="claude, codex, or all")
 def doctor():
     """Check local configuration without sending a notification."""
     target = config_path()
-    configured = False
+    settings = None
     error = ""
     try:
         settings = load_settings(target)
-        configured = bool(settings.bark_device_key.get_secret_value())
     except Exception as exc:
         error = type(exc).__name__
+    router = ChannelRouter(settings) if settings is not None else None
     rows = (
         ("Config", "OK" if target.exists() and not error else error or "MISSING"),
-        ("Bark key", "CONFIGURED" if configured else "MISSING"),
+        *((channel.label, router.status(channel) if router else "INVALID") for channel in CHANNELS),
         ("Claude Code", "INSTALLED" if claude_installed() else "MISSING"),
         ("Codex notify", "INSTALLED" if codex_installed() else "MISSING"),
     )
     for label, status in rows:
         typer.echo(f"{label:12} {status}")
-    typer.echo("Configuration check only. Verify delivery by completing a local task in the Codex desktop app.")
+    typer.echo(
+        "Configuration check only. Verify delivery by completing a local task in the Codex desktop app."
+    )
 
 
 @app.command("test")
-def test_notification():
-    """Send one explicit Bark connection test."""
-    settings = load_settings()
-    accepted = send_bark(
-        settings,
-        {
-            "title": "AgentWatch 已接通 ✅",
-            "body": "Codex / Claude Code 的完成通知通道配置成功。",
-        },
+def test_notification(
+    channel: Annotated[str, typer.Option(help="all, bark, qq, or feishu")] = "all",
+):
+    """Test enabled channels. Exit 0 if any accepts; 1 if none accepts."""
+    if channel not in {"all", *(item.name for item in CHANNELS)}:
+        raise typer.BadParameter("channel must be all, bark, qq, or feishu")
+    try:
+        settings = load_settings()
+    except Exception as exc:
+        # Configuration may contain a webhook URL; never print raw validation input.
+        typer.echo(f"Config INVALID ({type(exc).__name__}); run agentwatch-notify doctor.")
+        raise typer.Exit(1) from None
+    router = ChannelRouter(settings)
+    results = router.send(
+        NotificationMessage("AgentWatch 已接通 ✅", "Codex / Claude Code 的完成通知通道测试。"), channel
     )
-    typer.echo(
-        "Bark accepted the test notification." if accepted else "Bark did not accept the test notification."
-    )
-    if not accepted:
+    for item in CHANNELS:
+        if channel == "all" or channel == item.name:
+            status = (
+                ("OK" if results[item.name] else "FAILED") if item.name in results else router.status(item)
+            )
+            typer.echo(f"{item.label:12} {status}")
+    if not any(results.values()):
         raise typer.Exit(1)
 
 

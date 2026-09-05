@@ -10,13 +10,14 @@
 </p>
 
 <p align="center">
-  <strong>Codex 桌面版 / Claude Code 跑完以后，让 iPhone 和 Apple Watch 主动叫你回来。</strong>
+  <strong>Codex 桌面版 / Claude Code 跑完以后，通过 Bark、QQ 或飞书叫你回来。</strong>
   <br />
   <sub>完成通知 · LLM 动态人格 · 本地优先 · 可逆安装</sub>
 </p>
 
 <p align="center">
   <a href="#quick-start">三分钟安装</a> ·
+  <a href="#channels">通知通道</a> ·
   <a href="#personas">通知人格</a> ·
   <a href="#privacy">隐私边界</a> ·
   <a href="#roadmap">路线图</a>
@@ -28,7 +29,7 @@
 
 让 Coding Agent 跑一个十几分钟的任务时，最烦的不是等，而是**不知道什么时候等完**。
 
-盯着任务窗口浪费时间，离开电脑又会忍不住回来查看。AgentWatch 目前只解决这一件小事：接收 **Codex 桌面版的本地任务**和 **Claude Code CLI** 的完成事件，回合结束后通过 Bark 把提醒送到 iPhone 和 Apple Watch。
+盯着任务窗口浪费时间，离开电脑又会忍不住回来查看。AgentWatch 接收 **Codex 桌面版的本地任务**和 **Claude Code CLI** 的完成事件，回合结束后把提醒送到 **Bark / QQ / 飞书**。可以任选一个，也可以同时发送。
 
 **主要使用场景是 Codex 桌面应用 + Claude Code。** 安装过程需要运行几条终端命令；安装好后，你继续在 Codex 桌面应用里运行任务即可。Codex CLI 可以复用同一个 `notify` 配置。
 
@@ -42,7 +43,7 @@ Agent：OpenAI Codex
 ```
 
 > [!NOTE]
-> 当前是 **Notify-first Preview**。公开版本专注通知，没有网页服务、数据库或手机远程控制。电脑和手机能够联网即可，不要求处于同一个 Wi-Fi。
+> **Current：完成通知。Next：IM → Agent 双向交互（仅设计，未实现）。** 当前没有消息接收服务、网页服务、数据库或远程执行能力。QQ 使用独立运行的 OneBot 服务；飞书使用群自定义机器人 Webhook。
 
 ## 实机效果
 
@@ -67,7 +68,7 @@ Agent：OpenAI Codex
 
 | | |
 | --- | --- |
-| **🛰️ 双 Agent 接入**<br />Codex 使用官方 `notify`；Claude Code 使用 `Stop / StopFailure` Hooks。 | **⌚ 触腕提醒**<br />Bark 通知同时抵达 iPhone 和 Apple Watch，不用守着终端。 |
+| **🛰️ 双 Agent 接入**<br />Codex 使用官方 `notify`；Claude Code 使用 `Stop / StopFailure` Hooks。 | **📨 多通道提醒**<br />Bark、QQ / OneBot、飞书 Webhook；任选或同时启用，失败相互隔离。 |
 | **🎭 12 种通知人格**<br />总裁、皇上、甄嬛、猫主子、侦探……同一结果可以换种方式报信。 | **✨ LLM 临场发挥**<br />人格标题和短评按任务结果动态生成，失败时自动回退到本地模板。 |
 | **🧹 摘要与去重**<br />长回复压缩成一句话；同一完成事件不会连续轰炸手机。 | **🔐 本地与可逆**<br />配置只保存在本机，安装前备份，卸载时恢复原有设置。 |
 
@@ -82,8 +83,11 @@ flowchart LR
     S --> P{文案来源}
     P -->|默认| T[本地人格模板]
     P -->|可选| L[OpenAI-compatible LLM]
-    T --> K[Bark / APNs]
-    L --> K
+    T --> R[NotificationMessage · Channel Router]
+    L --> R
+    R --> K[Bark / APNs]
+    R --> Q[QQ / OneBot v11 HTTP]
+    R --> F[Feishu Webhook]
     K --> I[iPhone / Apple Watch]
 ```
 
@@ -100,7 +104,7 @@ Codex 的 `notify` 配置说明见 [OpenAI 官方配置参考](https://developer
 
 ## 三分钟安装
 
-需要 Python 3.11+、Bark，以及已经可以正常运行的 **Codex 桌面版**或 **Claude Code CLI**。只使用 Codex 桌面版时，无需为了通知另行安装 Codex CLI。
+需要 Python 3.11+、至少一个通知通道，以及已经可以正常运行的 **Codex 桌面版**或 **Claude Code CLI**。只使用 Codex 桌面版时，无需为了通知另行安装 Codex CLI。
 
 ### 1 · 安装
 
@@ -130,13 +134,13 @@ python -m pip install -e .
 
 </details>
 
-### 2 · 填写 Bark Key
+### 2 · 配置一个通知通道
 
 ```bash
 agentwatch-notify init
 ```
 
-打开 `~/.agentwatch-notify/.env`：
+打开 `~/.agentwatch-notify/.env`。Bark 用户只需填写以下内容；QQ / 飞书用户使用后面的[通道配置](#channels)，不需要 Bark Key：
 
 ```dotenv
 BARK_DEVICE_KEY=你的设备Key
@@ -175,9 +179,112 @@ agentwatch-notify install claude
 3. 完全退出并重新打开 Codex 桌面应用，在应用内启动一个本地任务，例如“只回复 1 + 1 的结果”。
 4. 该回合结束后，检查手机是否收到对应的 Codex 完成通知。
 
-`doctor` 只检查配置，`test` 只测试 Bark 投递；两者通过都不能代替第 3–4 步的真实桌面任务验证。当前接入范围是本机运行的任务，远程主机或云端任务需要单独适配。
+`doctor` 只检查配置，`test` 只测试通道投递；两者通过都不能代替第 3–4 步的真实桌面任务验证。当前接入范围是本机运行的任务，远程主机或云端任务需要单独适配。
 
 此前的实机联调使用 Windows Codex 桌面版与本项目完整开发版的 `notify` 回调。公开精简版沿用了这个入口；跨系统和桌面版本的兼容性仍需逐项验证，CI 通过不代表所有桌面版本都已实测。
+
+<a id="channels"></a>
+
+## 通知通道：任选一种，也可以全开
+
+### Bark · 保持原来的使用方式
+
+iPhone 安装 Bark，允许通知并复制设备 Key。在本地 `.env` 填入：
+
+```dotenv
+BARK_DEVICE_KEY=你的设备Key
+```
+
+```bash
+agentwatch-notify test --channel bark
+```
+
+旧配置无需新增开关：`BARK_ENABLED` 默认 `true`，有 Key 就可用。关闭时设置 `BARK_ENABLED=false`。新版本沿用原来的 Hook 命令和去重文件，**原安装目录内升级无需重新安装 Codex / Claude 回调**。仅当移动项目、重建虚拟环境或更换配置目录时，才需重装回调。
+
+### QQ · NapCat + OneBot v11
+
+NapCat / OneBot 是独立的第三方方案，**AgentWatch 不包含 QQ 客户端，也不实现 QQ 协议**。QQ 官方开放平台机器人未来可以作为另一个 Adapter 加入。
+
+1. 按 [NapCat 项目文档](https://napneko.github.io/)安装并运行 NapCat，登录用于发送通知的 QQ。
+2. 在 NapCat WebUI 的「网络配置」中点「新建」，选择 **HTTP 服务端 / HTTP Server**。
+3. 设 `host=127.0.0.1`、`port=3000`；设置独立的 Access Token，保存并启用。
+4. `3000` 是本例选择的 **OneBot API 端口**，不是 WebUI 端口。`ONEBOT_ACCESS_TOKEN` 对应网络配置里的 Token，不是 WebUI 登录密码。
+5. 在 AgentWatch `.env` 填写以下内容，替换示例 ID 和 Token：
+
+```dotenv
+QQ_ENABLED=true
+ONEBOT_BASE_URL=http://127.0.0.1:3000
+ONEBOT_ACCESS_TOKEN=填入HTTP服务端的Token
+QQ_TARGETS=private:10001,group:10002
+```
+
+`10001` / `10002` 仅为占位 ID。私聊使用 `private:你的接收QQ号`，群聊使用 `group:你的群号`；机器人需要能向该好友或已加入的群发消息。逗号分隔最多 8 个目标，重复目标会去重。只配置 QQ 时无需填写 Bark Key。
+
+```bash
+agentwatch-notify test --channel qq
+```
+
+同机部署推荐绑定回环地址。HTTP 只允许 `localhost`、`127.0.0.1` 和 `::1`，即使局域网地址也要求 HTTPS；非回环 OneBot 还必须配置 Token。Token 通过 `Authorization: Bearer …` 发送。本地 OneBot 自动绕过 `OUTBOUND_PROXY` 和环境代理。
+
+请求使用 `/send_private_msg` 或 `/send_group_msg`，并设置 `auto_escape=true`，任务回复里的 CQ 码只作为文字显示。只有 `status=ok` 且 `retcode=0` 算发送成功，异步受理不冒充成功。
+
+参考：[NapCat WebUI 网络配置](https://napneko.github.io/config/basic)、[OneBot HTTP](https://github.com/botuniverse/onebot-11/blob/master/communication/http.md)、[OneBot 发送消息与 auto_escape](https://github.com/botuniverse/onebot-11/blob/master/api/public.md)、[鉴权](https://github.com/botuniverse/onebot-11/blob/master/communication/authorization.md)。
+
+### 飞书 · 群自定义机器人 Webhook
+
+1. 打开目标飞书群，在群设置的「群机器人」里添加「自定义机器人」，设置名称。
+2. 复制 Webhook。建议开启「签名校验」，并复制签名密钥；若设置关键词，可使用 `AgentWatch`（通知均包含该词）。
+3. 将配置写入本地 `.env`：
+
+```dotenv
+FEISHU_ENABLED=true
+FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/替换为机器人Webhook
+FEISHU_WEBHOOK_SECRET=开启签名校验时填写密钥
+```
+
+如果机器人没有开启签名校验，`FEISHU_WEBHOOK_SECRET` 留空。Webhook 必须是 HTTPS；URL 本身也是凭证，请和 Secret 一样保密。
+
+```bash
+agentwatch-notify test --channel feishu
+```
+
+**当前飞书 Webhook 仅用于 outbound notification（向群发送通知）**，不能接收私聊或派发任务。未来双向交互将使用飞书应用机器人和事件订阅，作为独立 Adapter 接入。
+
+使用 `text` 消息；签名为 `Base64(HMAC-SHA256(key=timestamp + "\n" + secret, message=""))`。以返回体的 `code=0`（兼容旧 `StatusCode=0`）判断成功，HTTP 200 本身不代表业务成功。
+
+参考：[飞书开放平台自定义机器人指南](https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot)、[飞书官网 Webhook 与签名示例](https://www.feishu.cn/content/7271149634339422210)。
+
+### Bark + QQ + 飞书同时开启
+
+```dotenv
+NOTIFY_ENABLED=true
+BARK_ENABLED=true
+BARK_DEVICE_KEY=你的设备Key
+QQ_ENABLED=true
+ONEBOT_BASE_URL=http://127.0.0.1:3000
+ONEBOT_ACCESS_TOKEN=你的OneBotToken
+QQ_TARGETS=private:10001
+FEISHU_ENABLED=true
+FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/替换为机器人Webhook
+FEISHU_WEBHOOK_SECRET=
+```
+
+```bash
+agentwatch-notify doctor
+agentwatch-notify test --channel all
+```
+
+旧命令 `agentwatch-notify test` 等同于 `test --channel all`，默认测试所有已启用且配置完成的通道。按通道显示 `OK` / `FAILED` / `DISABLED` / `MISSING`，不会显示 Key、Token、Webhook 或目标账号。
+
+**退出码：至少一个通道成功为 0；全部失败或没有可用通道为 1；无效命令参数为 2。** QQ 多目标只要至少一个接收成功，该 QQ 通道即为成功。
+
+同一完成事件先生成一次人格文案，再并行投递各通道，最后统一去重。只要任一通道成功，就记录该事件；重来的相同回调不会重试失败的通道或 QQ 目标，避免已成功的目标重复收到。全部失败不记录成功，下次相同回调可重试；没有后台重试队列。
+
+## 升级与边界
+
+在原来的仓库与虚拟环境中运行 `git pull` 和 `python -m pip install -e .` 即可升级。原 `.env` 会保留；按需追加 QQ / 飞书配置，不要覆盖已有凭证。没有新增运行依赖、数据库或常驻服务。
+
+未来双向 Bridge 的输入模型、权限、任务管理和原会话回复设计见 [REMOTE_CONTROL_ARCHITECTURE.md](docs/REMOTE_CONTROL_ARCHITECTURE.md)。该文档中的入站事件、命令和远程控制配置均为设计草案，当前版本不实现。
 
 <a id="personas"></a>
 
@@ -216,7 +323,7 @@ LLM_API_KEY=your-api-key
 LLM_MODEL=your-model
 ```
 
-先在终端预览，不发送 Bark：
+先在终端预览，不向任何通知通道发送：
 
 ```bash
 agentwatch-notify preview \
@@ -230,22 +337,25 @@ agentwatch-notify preview \
 
 ## 数据去了哪里？
 
-| 数据 | 本机 | Bark | 可选 LLM |
-| --- | :---: | :---: | :---: |
-| Bark Device Key | ✅ | 请求体 | ❌ |
-| LLM API Key | ✅ | ❌ | 请求头 |
-| Agent 名称 | ✅ | ✅ | ✅ |
-| 项目文件夹名 | ✅ | ✅ | ✅ |
-| 脱敏限长摘要 | ✅ | ✅ | ✅ |
-| 完整对话与代码 | ❌ | ❌ | ❌ |
-| 项目绝对路径 | ❌ | ❌ | ❌ |
-| 工具参数 / 环境变量 | ❌ | ❌ | ❌ |
+| 数据 | 本机处理 / 存储 | 已启用的通知通道 | 可选 LLM |
+| --- | --- | --- | --- |
+| Bark Device Key | 本地配置 | 仅 Bark 请求体 | ❌ |
+| OneBot Access Token | 本地配置 | 仅 OneBot 请求头 | ❌ |
+| 飞书 Webhook / Secret | 本地配置 | 仅向 Webhook 请求，Secret 用于本地签名 | ❌ |
+| LLM API Key | 本地配置 | ❌ | 请求头 |
+| Agent 名称、项目文件夹名、脱敏限长摘要 | 本地处理 | ✅ | ✅ |
+| Hook 原始载荷（可能含路径、完整回复等） | 内存中处理；旧 Codex notify 按原行为转发 | 不直接发送原始载荷 | 不直接发送原始载荷 |
+| 事件去重哈希与时间戳 | 本地 `sent.json` | ❌ | ❌ |
+
+QQ/飞书接收者会看到与 Bark 相同的脱敏通知内容。群聊意味着群成员可以阅读通知，请选择你希望接收这些结果的目标。摘要最多 120 字符；QQ/飞书再限制到 2500 字符，Bark 保持标题 120 / 正文 900 字符上限。
 
 > [!IMPORTANT]
 > 默认不使用 LLM。只有同时填写 `LLM_BASE_URL` 和 `LLM_MODEL` 后，脱敏字段才会发送到你选择的服务。
 
 - `.env` 已被 Git 忽略。
 - Bark Key 放在 HTTPS POST 请求体中，不出现在 URL 或通知正文。
+- OneBot Token、飞书 Webhook 和签名 Secret 都进入脱敏词表；`doctor` 不联网且不显示凭证。
+- 通道请求保持 TLS 校验、禁止跳转，网络操作超时为 10 秒（沿用原 Bark 设置）；外部通道可使用 `OUTBOUND_PROXY`。不读取环境代理，本地 OneBot 自动直连。
 - 结果先清理 Markdown，再执行常见 Token、API Key、Authorization 与私钥脱敏。
 - Claude 的其他 Hooks 会保留；Codex 原有 `notify` 命令会继续执行。
 - 安装器修改配置前创建带时间戳的备份。
@@ -280,6 +390,7 @@ BARK_ICON_URL=https://example.com/my-agentwatch-icon-v2.png
 
 ```dotenv
 NOTIFY_ENABLED=true
+BARK_ENABLED=true
 BARK_SERVER=https://api.day.app
 BARK_DEVICE_KEY=
 BARK_GROUP=AgentWatch
@@ -305,8 +416,8 @@ OUTBOUND_PROXY=http://127.0.0.1:7890
 | `agentwatch-notify init` | 创建本地配置 |
 | `agentwatch-notify install all` | 安装两种 Agent 回调 |
 | `agentwatch-notify doctor` | 检查配置，不发通知 |
-| `agentwatch-notify test` | 明确发送一条 Bark 测试 |
-| `agentwatch-notify preview` | 预览人格文案，不发 Bark |
+| `agentwatch-notify test [--channel all/bark/qq/feishu]` | 向所选已配置通道发送测试，至少一个成功则退出 0 |
+| `agentwatch-notify preview` | 预览人格文案，不向任何通道发送 |
 | `agentwatch-notify personas` | 列出人格配置值 |
 | `agentwatch-notify uninstall all` | 移除回调并恢复旧配置 |
 
@@ -344,7 +455,9 @@ agentwatch-notify uninstall all
 - [ ] 完善 Codex 桌面版各系统与版本的实机验证，以及 Claude Code CLI 兼容测试
 - [ ] PyPI 一键安装和自动升级
 - [ ] 接入 Gemini CLI、OpenCode、Aider 等 Coding Agent
-- [ ] 支持 ntfy、Gotify、Telegram、飞书等通知渠道
+- [x] Bark、QQ / OneBot v11、飞书 Webhook 出站通知
+- [ ] 支持 ntfy、Gotify、Telegram 等通知渠道
+- [ ] QQ / 飞书入站 Adapter 与默认关闭的 AgentWatch Bridge（仅架构设计）
 - [ ] 自定义人格、提示词与每个 Agent 的独立规则
 - [ ] 本地 Web Dashboard、任务历史和运行状态
 - [ ] 带一次性授权、审计记录与安全边界的手机批阅
@@ -354,7 +467,7 @@ agentwatch-notify uninstall all
 ## Troubleshooting
 
 <details>
-<summary><strong>Bark 测试成功，但任务结束没有通知</strong></summary>
+<summary><strong>通道测试成功，但任务结束没有通知</strong></summary>
 
 1. 运行 `agentwatch-notify doctor`。
 2. 完全退出并重新打开 Codex 桌面应用，或重新启动 Claude Code CLI。
@@ -375,6 +488,8 @@ agentwatch-notify uninstall all
 
 Codex 按 thread-id / turn-id 去重一天；Claude 按 session、事件和结果摘要做短窗口去重。新的真实回合仍会正常提醒。
 
+多通道发送完才统一记录成功；同一事件向各通道发送一次是正常行为。部分失败不会触发整个事件重发，具体语义见[通知通道](#channels)。
+
 </details>
 
 ## 开发
@@ -385,7 +500,7 @@ pytest -q
 ruff check .
 ```
 
-CI 覆盖 Windows / Ubuntu 与 Python 3.11 / 3.12。测试使用 fixture 和 MockTransport，不连接真实 LLM、Bark、Codex 或 Claude Code。
+CI 覆盖 Windows / Ubuntu 与 Python 3.11 / 3.12。测试使用 fixture 和 MockTransport，禁止真实 HTTP，不连接 LLM、Bark、QQ / NapCat 或飞书，也不启动 Codex / Claude Code。QQ / 飞书已通过协议模拟测试；真实账号联调需要按上面的教程配置后验证。
 
 ## 参与项目
 

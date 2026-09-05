@@ -1,8 +1,9 @@
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PERSONAS = {
@@ -31,15 +32,25 @@ def config_path() -> Path:
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(extra="ignore", populate_by_name=True)
+    model_config = SettingsConfigDict(extra="ignore", populate_by_name=True, hide_input_in_errors=True)
 
     notify_enabled: bool = Field(True, validation_alias="NOTIFY_ENABLED")
+    bark_enabled: bool = Field(True, validation_alias="BARK_ENABLED")
     bark_server: str = Field("https://api.day.app", validation_alias="BARK_SERVER")
     bark_device_key: SecretStr = Field(SecretStr(""), validation_alias="BARK_DEVICE_KEY")
     bark_group: str = Field("AgentWatch", validation_alias="BARK_GROUP")
     bark_sound: str = Field("minuet", validation_alias="BARK_SOUND")
     bark_level: str = Field("active", validation_alias="BARK_LEVEL")
     bark_icon_url: str = Field("", validation_alias="BARK_ICON_URL")
+
+    qq_enabled: bool = Field(False, validation_alias="QQ_ENABLED")
+    onebot_base_url: str = Field("http://127.0.0.1:3000", validation_alias="ONEBOT_BASE_URL")
+    onebot_access_token: SecretStr = Field(SecretStr(""), validation_alias="ONEBOT_ACCESS_TOKEN")
+    qq_targets: str = Field("", validation_alias="QQ_TARGETS", repr=False)
+
+    feishu_enabled: bool = Field(False, validation_alias="FEISHU_ENABLED")
+    feishu_webhook_url: SecretStr = Field(SecretStr(""), validation_alias="FEISHU_WEBHOOK_URL")
+    feishu_webhook_secret: SecretStr = Field(SecretStr(""), validation_alias="FEISHU_WEBHOOK_SECRET")
 
     persona: str = Field("boss", validation_alias="PERSONA")
     claude_persona: str = Field("", validation_alias="CLAUDE_PERSONA")
@@ -62,10 +73,45 @@ class Settings(BaseSettings):
     @field_validator("bark_server")
     @classmethod
     def safe_bark_server(cls, value: str) -> str:
-        parsed = urlsplit(value)
-        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
-            raise ValueError("BARK_SERVER must be an HTTPS origin")
-        return value.rstrip("/")
+        return safe_endpoint(value, "BARK_SERVER")
+
+    @field_validator("onebot_base_url")
+    @classmethod
+    def safe_onebot_url(cls, value: str) -> str:
+        return safe_endpoint(value, "ONEBOT_BASE_URL", local_http=True)
+
+    @field_validator("feishu_webhook_url")
+    @classmethod
+    def safe_feishu_url(cls, value: SecretStr) -> SecretStr:
+        if value.get_secret_value():
+            safe_endpoint(value.get_secret_value(), "FEISHU_WEBHOOK_URL")
+        return value
+
+    @field_validator("qq_targets")
+    @classmethod
+    def valid_targets(cls, value: str) -> str:
+        if not value.strip():
+            return ""
+        targets = list(dict.fromkeys(part.strip() for part in value.split(",")))
+        if len(targets) > 8 or any(
+            not re.fullmatch(r"(?:private|group):[1-9][0-9]{0,18}", target) for target in targets
+        ):
+            raise ValueError(
+                "QQ_TARGETS requires up to 8 private:<positive ID> or group:<positive ID> entries"
+            )
+        if any(int(target.split(":")[1]) > 2**63 - 1 for target in targets):
+            raise ValueError("QQ target ID exceeds signed 64-bit range")
+        return ",".join(targets)
+
+    @model_validator(mode="after")
+    def remote_onebot_auth(self) -> "Settings":
+        if (
+            self.qq_enabled
+            and urlsplit(self.onebot_base_url).hostname not in {"localhost", "127.0.0.1", "::1"}
+            and not self.onebot_access_token.get_secret_value()
+        ):
+            raise ValueError("Remote OneBot requires ONEBOT_ACCESS_TOKEN")
+        return self
 
     @field_validator("llm_base_url")
     @classmethod
@@ -110,8 +156,42 @@ class Settings(BaseSettings):
 
     @property
     def secrets(self) -> list[str]:
-        values = (self.bark_device_key, self.llm_api_key)
+        values = (
+            self.bark_device_key,
+            self.llm_api_key,
+            self.onebot_access_token,
+            self.feishu_webhook_url,
+            self.feishu_webhook_secret,
+        )
         return [value.get_secret_value() for value in values if value.get_secret_value()]
+
+
+def safe_endpoint(value: str, label: str, local_http: bool = False) -> str:
+    """Reject credentials/query/fragment and keep errors independent of secret input."""
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+        local = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        valid = (
+            bool(parsed.hostname)
+            and (parsed.scheme == "https" or (local_http and local and parsed.scheme == "http"))
+            and parsed.username is None
+            and parsed.password is None
+            and not parsed.query
+            and not parsed.fragment
+            and "?" not in value
+            and "#" not in value
+            and not any(char.isspace() or ord(char) < 32 for char in value)
+            and "\\" not in value
+            and (port is None or port > 0)
+        )
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError(
+            f"{label} requires HTTPS (HTTP allowed only for local OneBot), without credentials/query/fragment"
+        )
+    return value.rstrip("/")
 
 
 def load_settings(path: Path | None = None) -> Settings:

@@ -3,14 +3,17 @@ import json
 import os
 import subprocess
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import httpx
 from filelock import FileLock
 
+from agentwatch_notify.channels.base import NotificationMessage
+from agentwatch_notify.channels.router import ChannelRouter
 from agentwatch_notify.config import config_home, config_path, load_settings
 from agentwatch_notify.persona import render_notification
-from agentwatch_notify.providers import send_bark
 
 MODULE = "agentwatch_notify"
 
@@ -68,6 +71,7 @@ def deliver(
     settings_file: Path | None = None,
     bark_transport=None,
     llm_transport=None,
+    channel_transports: Mapping[str, httpx.BaseTransport] | None = None,
 ) -> bool:
     if len(raw) > 524_288:
         return False
@@ -78,7 +82,11 @@ def deliver(
     if not event:
         return False
     settings = load_settings(settings_file)
-    if not settings.notify_enabled or not settings.bark_device_key.get_secret_value():
+    transports = dict(channel_transports or {})
+    if bark_transport is not None:
+        transports["bark"] = bark_transport  # Preserve the public test/integration injection point.
+    router = ChannelRouter(settings, transports=transports)
+    if not router.active():
         return False
 
     identity = event["identity"]
@@ -109,7 +117,8 @@ def deliver(
             event["category"],
             transport=llm_transport,
         )
-        accepted = send_bark(settings, message, transport=bark_transport)
+        results = router.send(NotificationMessage(**message))
+        accepted = any(results.values())
         if accepted:
             sent[digest] = current
             sent = dict(sorted(sent.items(), key=lambda item: item[1])[-1000:])
